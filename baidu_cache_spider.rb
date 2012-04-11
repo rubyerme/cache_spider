@@ -19,31 +19,16 @@ BAIDU_CACHE_PAGE_URL = "http://www.baidu.com/s?wd=site:%s?&pn=%d"
 def get_source(url)
   #sleep for a while or baidu will block you
   log "sleep for:" + sleep(rand 5).to_s
-  html = open(url).read
-  html.force_encoding("gbk")
-  html.encode!("utf-8")
-  Nokogiri::HTML.parse html
-
-  #response = open(url).read
-  #charset = Nokogiri::HTML(response).meta_encoding
-  #log "charset: #{charset}"
-  #response = Nokogiri::HTML.parse(response,nil,charset)
-  #puts "get ...."
-  #puts response
-  #response
-
-  #str = str.encode("utf-8", "GBK")
-  #str = convert_encoding("utf-8", "ASCII-8BIT", str)
-  #str = convert_encoding("GBK", "UTF-8", str)
-  #log "after str is: #{str.encoding}"
-  #str = str.encode("utf-8", str.encoding)
-  #log "after str is: #{str.encoding}"
-  #rand_file = "/tmp/#{rand(1000000000000000)}.html"
-  #log "wget ing ..."
-  #log "get #{url} to #{rand_file}"
-  #`wget -O #{rand_file} #{url}`
-  #str = File.read(rand_file, :encoding => Encoding::GBK)
-  #Nokogiri::HTML.parse(str)
+  begin
+    html = open(url).read
+    html.force_encoding("gbk")
+    html.encode!("utf-8", :undef => :replace, :replace => "?", :invalid => :replace)
+    Nokogiri::HTML.parse html
+  rescue Exception => e
+    puts "Error url: #{url}"
+    puts e.message
+    puts e.backtrace.inspect
+  end
 end
 
 # 抓取第page_num页的源码
@@ -52,25 +37,9 @@ def get_source_of_baidu_page(page_num)
   get_source(url)
 end
 
-# 编码转换，这里我被搞晕了
-def convert_encoding(source_encoding, destination_encoding, str)
-  ec = Encoding::Converter.new(source_encoding, destination_encoding)
-  begin
-    ec.convert(str)
-  rescue Encoding::UndefinedConversionError
-    log $!.error_char.dump
-    p $!.error_char.encoding
-  rescue Encoding::InvalidByteSequenceError
-    p $!
-    log $!.error_bytes.dump  if $!.error_bytes
-    log $!.readagain_bytes.dump if $!.readagain_bytes
-  end
-  str
-end
-
 # 从百度快照源码抽取出有用的信息，其实这就是原始网站源码
 def get_cache(source_html)
-  if source_html.xpath("/html/body/div[3]")[0]
+  if source_html && source_html.xpath("/html/body/div[3]")[0]
     source_html.xpath("/html/body/div[3]")[0].inner_html
   else
     #有一些页面快照结构有问题，打出来，手工分析
@@ -86,12 +55,12 @@ def get_all_baidu_cache_pages
   total_num = doc.css(".site_tip strong")[0].content.scan(/\d+/)[0].to_i
   pages = []
   pages << doc.css("#container .result")
-  #i = 1
-  #while i*10 < total_num do
-  #doc = get_source_of_baidu_page(i*10)
-  #pages << doc.css("#container .result")
-  #i += 1
-  #end
+  i = 1
+  while i*10 < total_num do
+    doc = get_source_of_baidu_page(i*10)
+    pages << doc.css("#container .result")
+    i += 1
+  end
 
   log "Get Pages Num: #{pages.size}"
   log "Get Items Num: #{total_num}"
@@ -122,9 +91,10 @@ def write_cache_to_disk(nodes)
     log "origin_path = #{node[:origin_path]}"
 
     #原始地址为"/"说明是主页，名字改为index
-    file_name = node[:origin_path] == "/" ? "#{@path}/index" : @path + node[:origin_path]
-    file_name = file_name.split("?")[0]
-    file_name = file_name + ".html"
+    file_name = node[:origin_path].split("?")[0]
+    #file_name = file_name == "/" ? "#{@path}/index" : @path + node[:origin_path]
+    file_name = @path + file_name + "/index.html"
+    #file_name = file_name + ".html"
 
     #make dir
     dir = File.dirname(file_name)
